@@ -50,18 +50,18 @@ void MainWindow::getLoc(const QString& fileName, double focus, quint32 martixSiz
                     in.readLineInto(&currentLine);
                     QStringList list = currentLine.split("  ", QString::SkipEmptyParts);
                     star s;
-//                    if (i < 6)
-//                    {
-//                        s.x = ((static_cast <float> (rand()) / static_cast <float> (RAND_MAX / 2048)) - martixSize / 2.) * pixelSize;
-//                        s.y = ((static_cast <float> (rand()) / static_cast <float> (RAND_MAX / 2048)) - martixSize / 2.) * pixelSize;
-//                    }
-//                    else
-//                    {
-                        //qDebug() << ((static_cast <float> (rand()) / static_cast <float> (RAND_MAX / 2048)) - martixSize / 2.);
-                        s.x = (list[2].toDouble() - martixSize / 2.) * pixelSize;
-                        s.y = (list[3].toDouble() - martixSize / 2.) * pixelSize;
+                    //                    if (i < 6)
+                    //                    {
+                    //                        s.x = ((static_cast <float> (rand()) / static_cast <float> (RAND_MAX / 2048)) - martixSize / 2.) * pixelSize;
+                    //                        s.y = ((static_cast <float> (rand()) / static_cast <float> (RAND_MAX / 2048)) - martixSize / 2.) * pixelSize;
+                    //                    }
+                    //                    else
+                    //                    {
+                    //qDebug() << ((static_cast <float> (rand()) / static_cast <float> (RAND_MAX / 2048)) - martixSize / 2.);
+                    s.x = (list[2].toDouble() - martixSize / 2.) * pixelSize;
+                    s.y = (list[3].toDouble() - martixSize / 2.) * pixelSize;
 
-//                    }
+                    //                    }
                     stars.append(s);
                 }
                 coordsReaded = true;
@@ -115,11 +115,13 @@ void MainWindow::DistCadr()
                     Coord[j][0], Coord[j][1], Coord[j][2]);
             float res = 1.0 - Ncos[i][j];
             if (res>0)
-                res = sqrt(res*2.0) * EPSILON / Ro;
+                res = sqrt(res * 2.0) * EPSILON / Ro;
             else res = 0.0;
             Eps[i][j] = res;
+
         }
     }
+
     for (i = 1; i < NumObj; i++)
     {
         for (j = 0; j < i; j++)
@@ -152,6 +154,8 @@ void MainWindow::DistCadr()
                 M_in[i][j] = k;
             }
             //else M_in[i][j]=-10;
+            Eps_dist[count] = Eps[i][j];
+            NCos_dist[count] = Ncos[i][j];
             M_in_dist[count++] = M_in[i][j];
         } // end for j
     }
@@ -379,10 +383,10 @@ void MainWindow::on_fastSectorPushButton_clicked()
     {
         out.writeRawData((char*)histogramm[i], bitCount * sizeof(char));
     }
-    QDir testDir("C:/Users/Yumatov/Documents/build-catalog-Desktop_Qt_5_8_0_MinGW_32bit3-Release/ttttest");
+    QDir testDir("C:/Users/Yumatov/Documents/build-catalog-Desktop_Qt_5_8_0_MinGW_32bit3-Release/test");
     auto files = testDir.entryList(QDir::Files);
-    //double focus = 59.782900;
-    double focus = 60;
+    double focus = 59.782900;
+    //double focus = 60;
 
     const int maxSectorSize = 200;
     int hist [NumObj][maxSectorSize];
@@ -501,8 +505,11 @@ struct RangeAttrs
 struct Candidate
 {
     short dist;
-    short indexArray;
+    char indexArray;
+    char firstIndex;
+    char secondIndex;
 };
+
 
 #pragma pack(push,1)
 struct StarPair
@@ -523,31 +530,51 @@ int compareCandidate (const void* p1, const void* p2)
     else return 0;
 }
 
-int compareShort (const void* p1, const void* p2)
+int compareStarObject (const void* p1, const void* p2)
 {
-    if ( *(short*)p1 <  *(short*)p2 ) return -1;
-    if ( *(short*)p1 == *(short*)p2 ) return 0;
-    if ( *(short*)p1 >  *(short*)p2 ) return 1;
+
+    StarObject* tmp1 = (StarObject*)p1;
+    StarObject* tmp2 = (StarObject*)p2;
+
+    if ( (tmp1->starNum <  tmp2->starNum)
+         || (tmp1->starNum ==  tmp2->starNum
+             && (tmp1->objNum <  tmp2->objNum)))
+    {
+        return -1;
+    }
+    if ((tmp1->starNum ==  tmp2->starNum
+         && (tmp1->objNum ==  tmp2->objNum)))
+    {
+        return 0;
+    }
+    if ( (tmp1->starNum >  tmp2->starNum)
+         || (tmp1->starNum ==  tmp2->starNum
+             && (tmp1->objNum >  tmp2->objNum)))
+    {
+        return 1;
+    }
 }
 
-short uniques(short array[], size_t size)
+
+short uniques(StarObject array[], size_t size)
 {
     short newSize = 0;
     if (size == 0)
         return 0;
 
-    short* result = array;
-    short* first = array;
-    short* last = (array + size);
+    StarObject* result = array;
+    StarObject* first = array;
+    StarObject* last = (array + size);
     while (++first != last) {
-        if (!(*result == *first)) {
+        if (!(result->starNum == first->starNum)
+                || (result->starNum == first->starNum
+                    && result->objNum != first->objNum)) {
             *(++result) = *first;
             ++newSize;
         }
     }
     return ++newSize;
 }
-
 
 #if defined(__i386__)
 
@@ -568,6 +595,22 @@ static __inline__ unsigned long long rdtsc(void)
 }
 
 #endif
+
+void assingObjectIndexToStar(Candidate* mainp, Candidate* addp, char* sObjects)
+{
+    bool firstFirst = false;
+    if ((firstFirst = (mainp->firstIndex == addp->firstIndex))
+            || mainp->firstIndex == addp->secondIndex)
+    {
+        sObjects[0] =  mainp->firstIndex;
+        sObjects[1] = mainp->secondIndex;
+        sObjects[2] = firstFirst ? addp->secondIndex : addp->firstIndex;
+        return;
+    }
+    sObjects[0] =  mainp->secondIndex;
+    sObjects[1] = mainp->firstIndex;
+    sObjects[2] = mainp->secondIndex == addp->firstIndex ? addp->secondIndex : addp->firstIndex;
+}
 
 unsigned __int64 time1, time2;
 
@@ -668,26 +711,36 @@ void MainWindow::on_fastThreePushButton_clicked()
     //QDir testDir("C:/Users/Yumatov/Documents/build-catalog-Desktop_Qt_5_8_0_MinGW_32bit3-Release/test");
     //QDir testDir("C:/Users/Yumatov/Documents/build-catalog-Desktop_Qt_5_8_0_MinGW_32bit3-Release/ttest");
     //QDir testDir("C:/Users/Yumatov/Documents/build-catalog-Desktop_Qt_5_8_0_MinGW_32bit3-Release/tttest");
-    QDir testDir("C:/Users/Yumatov/Documents/build-catalog-Desktop_Qt_5_8_0_MinGW_32bit3-Release/ttttest");
+    QDir testDir("C:/Users/Yumatov/Documents/build-catalog-Desktop_Qt_5_8_0_MinGW_32bit3-Release/ttest");
+    //QDir testDir("C:/Users/Yumatov/Documents/build-catalog-Desktop_Qt_5_8_0_MinGW_32bit3-Release/nnew_test");
+
+
+
     auto files = testDir.entryList(QDir::Files);
-    //double focus = 59.782900;
-    double focus = 60;
-    //double focus = 59.31;
+    double focus = 59.782900;
+    //double focus = 60;
+    // double focus = 59.31;
     //double MApr [3] = {-0.3842312,   0.6449825 , -0.6605785};
 
-    short tmpStar1;
-    short tmpStar2;
-    short tmpStar3;
+    StarObject tmpStar1;
+    StarObject tmpStar2;
+    StarObject tmpStar3;
+    int cnt = 0;
+
+    char sObjects[3];
     //short* tmpStars[3] {&tmpStar1, &tmpStar2, &tmpStar3};
     QVector <quint64> times;
+    int count = 0;
     for (const auto& f : files)
     {
-        short threeCandidates[groupCount][maxGroupSize];
+        NumDet = 0;
+        qDebug() << f;
+        StarObject threeCandidates[groupCount][maxGroupSize];
         short threeCandidatesCount[groupCount];
         char hist [5153][6];
         getLoc(testDir.path() + "/" + f, focus, 2048, 0.0055);
         QElapsedTimer timer;
-        time1 = rdtsc();
+        //time1 = rdtsc();
         timer.start();
         memset(hist, 0, sizeof(hist[0][0]) * 5153 * 6);
         DistCadr();
@@ -698,13 +751,20 @@ void MainWindow::on_fastThreePushButton_clicked()
                 for (int j = -2; j < 3; j++)
                 {
                     int pos = M_in_dist[i]  - j;
-                    if (pos < 0) {
+                    if (pos < 0 || pos >= intervalCount)
+                    {
                         continue;
                     }
                     for (int k = shifts[pos].start; k < shifts[pos].start + shifts[pos].count; k++)
                     {
-                        setBit(hist[nCatalog[k].fStar], i);
-                        setBit(hist[nCatalog[k].sStar], i);
+                        double cos = l_st[nCatalog[k].fStar] * l_st[nCatalog[k].sStar]
+                                + m_st[nCatalog[k].fStar] * m_st[nCatalog[k].sStar]
+                                + n_st[nCatalog[k].fStar] * n_st[nCatalog[k].sStar];
+                        if (fabs(cos - NCos_dist[i]) <= Eps_dist[i])
+                        {
+                            setBit(hist[nCatalog[k].fStar], i);
+                            setBit(hist[nCatalog[k].sStar], i);
+                        }
                     }
                 }
             }
@@ -712,9 +772,11 @@ void MainWindow::on_fastThreePushButton_clicked()
 
 
         memset(threeCandidatesCount, 0, sizeof(short) * groupCount);
-        time2 = rdtsc();
-        times.append(time2 - time1);
-        time1 = rdtsc();
+        // time2 = rdtsc();
+        // times.append(time2 - time1);
+        // time1 = rdtsc();
+        //qint32 count = 0;
+        qint32 distIndexFirstStar = -1;
         for (int i = 0; i < NumObj - 2; i++)
         {
             short offsetI = 1;
@@ -732,21 +794,29 @@ void MainWindow::on_fastThreePushButton_clicked()
                 Candidate candidates[3];
                 for (int k = j + 1; k < NumObj; k++)
                 {
+                    if (M_in[i][j] < 0 || M_in[i][k] < 0 || M_in[j][k] < 0)
+                    {
+                        continue;
+                    }
                     candidates[0].dist = M_in[i][j];
-                    if (candidates[0].dist < 0) continue;
                     candidates[0].indexArray = (i * NumObj) - offsetI + (j - i);
+                    candidates[0].firstIndex = i;
+                    candidates[0].secondIndex = j;
 
                     candidates[1].dist = M_in[i][k];
-                    if (candidates[1].dist < 0) continue;
                     candidates[1].indexArray = (i * NumObj) - offsetI + (k - i);
+                    candidates[1].firstIndex = i;
+                    candidates[1].secondIndex = k;
 
                     candidates[2].dist = M_in[j][k];
-                    if (candidates[2].dist < 0) continue;
                     candidates[2].indexArray = (j * NumObj) - offsetJ + (k - j);
+                    candidates[2].firstIndex = j;
+                    candidates[2].secondIndex = k;
 
                     qsort(candidates, 3, sizeof(Candidate), compareCandidate);
                     short min1 = candidates[0].dist - 2 >= 0 ? candidates[0].dist - 2
                             : candidates[0].dist - 1 >= 0 ? candidates[0].dist - 1 : candidates[0].dist;
+
                     short max1 = candidates[0].dist + 2 < intervalCount ? candidates[0].dist + 2
                             : candidates[0].dist - 1 < intervalCount ? candidates[0].dist + 1 : candidates[0].dist;
 
@@ -754,29 +824,35 @@ void MainWindow::on_fastThreePushButton_clicked()
                     {
                         for (int p = shifts[d1].start; p < shifts[d1].start + shifts[d1].count; p++)
                         {
-                            tmpStar1 = -1;
-                            tmpStar2 = -1;
-                            tmpStar3 = -1;
-                            if ((testBit(hist[nCatalog[p].fStar], candidates[1].indexArray)
-                                 && testBit(hist[nCatalog[p].sStar], candidates[2].indexArray))
-                                    || (testBit(hist[nCatalog[p].fStar], candidates[2].indexArray)
-                                        && testBit(hist[nCatalog[p].sStar], candidates[1].indexArray)))
+                            tmpStar1.starNum = -1;
+                            tmpStar2.starNum = -1;
+                            tmpStar3.starNum = -1;
+                            distIndexFirstStar = -1;
+
+                            if (testBit(hist[nCatalog[p].fStar], candidates[1].indexArray)
+                                    && testBit(hist[nCatalog[p].sStar], candidates[2].indexArray))
                             {
-                                //                                if (l_st[nCatalog[p].fStar] * MApr[0]
-                                //                                        + m_st[nCatalog[p].fStar] * MApr[1]
-                                //                                        + n_st[nCatalog[p].fStar] * MApr[2] < CosP)
-                                //                                {
-                                //                                    continue;
-                                //                                }
-                                tmpStar1 = nCatalog[p].fStar;
-                                tmpStar2 = nCatalog[p].sStar;
+                                distIndexFirstStar = 1;
                             }
-                            if (tmpStar1 != -1)
+                            else if (testBit(hist[nCatalog[p].fStar], candidates[2].indexArray)
+                                     && testBit(hist[nCatalog[p].sStar], candidates[1].indexArray))
+                            {
+                                distIndexFirstStar = 2;
+                            }
+                            if (distIndexFirstStar != -1)
+                            {
+                                tmpStar1.starNum = nCatalog[p].fStar;
+                                tmpStar2.starNum = nCatalog[p].sStar;
+                            }
+
+                            if (tmpStar1.starNum != -1)
                             {
                                 short min2 = candidates[1].dist - 2 >= 0 ? candidates[1].dist - 2
                                         : candidates[1].dist - 1 >= 0 ? candidates[1].dist - 1 : candidates[1].dist;
+
                                 short max2 = candidates[1].dist + 2 < intervalCount ? candidates[1].dist + 2
                                         : candidates[1].dist - 1 < intervalCount ? candidates[1].dist + 1 : candidates[1].dist;
+
                                 bool threeClosed = false;
                                 for (int d2 = min2; d2 < max2 + 1; d2++)
                                 {
@@ -788,29 +864,35 @@ void MainWindow::on_fastThreePushButton_clicked()
                                                 || (testBit(hist[nCatalog[pm].fStar], candidates[2].indexArray)
                                                     && testBit(hist[nCatalog[pm].sStar], candidates[0].indexArray)))
                                         {
-                                            if ((nCatalog[pm].fStar == tmpStar1
-                                                 && nCatalog[pm].sStar != tmpStar2)
-                                                    || (nCatalog[pm].fStar == tmpStar2
-                                                        && nCatalog[pm].sStar != tmpStar1))
+                                            if ((nCatalog[pm].fStar == tmpStar1.starNum
+                                                 && nCatalog[pm].sStar != tmpStar2.starNum)
+                                                    || (nCatalog[pm].fStar == tmpStar2.starNum
+                                                        && nCatalog[pm].sStar != tmpStar1.starNum))
                                             {
-                                                tmpStar3 = nCatalog[pm].sStar;
+                                                tmpStar3.starNum = nCatalog[pm].sStar;
                                                 threeClosed = true;
                                                 break;
                                             }
-                                            if ((nCatalog[pm].sStar == tmpStar1
-                                                 && nCatalog[pm].fStar != tmpStar2)
-                                                    || (nCatalog[pm].sStar == tmpStar2
-                                                        && nCatalog[pm].fStar != tmpStar1))
+                                            if ((nCatalog[pm].sStar == tmpStar1.starNum
+                                                 && nCatalog[pm].fStar != tmpStar2.starNum)
+                                                    || (nCatalog[pm].sStar == tmpStar2.starNum
+                                                        && nCatalog[pm].fStar != tmpStar1.starNum))
                                             {
-                                                tmpStar3 = nCatalog[pm].fStar;
+                                                tmpStar3.starNum = nCatalog[pm].fStar;
                                                 threeClosed = true;
                                                 break;
                                             }
                                         }
                                     }
                                 }
-                                if (tmpStar3 != -1)
+                                if (tmpStar3.starNum != -1)
                                 {
+                                    ++cnt;
+                                    assingObjectIndexToStar(&candidates[0], &candidates[distIndexFirstStar], sObjects);
+                                    tmpStar1.objNum = sObjects[0];
+                                    tmpStar2.objNum = sObjects[1];
+                                    tmpStar3.objNum = sObjects[2];
+
                                     for (int c = 0; c < groupCount; c++)
                                     {
                                         if (threeCandidatesCount[c] == 0)
@@ -821,43 +903,28 @@ void MainWindow::on_fastThreePushButton_clicked()
                                             threeCandidatesCount[c] = 3;
                                             break;
                                         }
-//                                                                                else
-//                                                                                {
-//                                                                                    bool exit = false;
-//                                                                                    for (int st = 0; st < 3; st++)
-//                                                                                    {
-//                                                                                        if (l_st[*tmpStars[st]] * l_st[threeCandidates[c][0]]
-//                                                                                                + m_st[*tmpStars[st]] * m_st[threeCandidates[c][0]]
-//                                                                                                + n_st[*tmpStars[st]] * n_st[threeCandidates[c][0]] >= CosP)
-//                                                                                        {
-//                                                                                            threeCandidates[c][threeCandidatesCount[c]++] = *tmpStars[st];
-//                                                                                            if (threeCandidatesCount[c] >= maxGroupSize - 3)
-//                                                                                            {
-//                                                                                                qsort(threeCandidates[c], threeCandidatesCount[c], sizeof(short), compareShort);
-//                                                                                                threeCandidatesCount[c] = uniques(threeCandidates[c], threeCandidatesCount[c]);
-//                                                                                            }
-//                                                                                        }
-//                                                                                        else
-//                                                                                        {
-//                                                                                            if (st != 0)
-//                                                                                                exit = true;
-//                                                                                            break;
-//                                                                                        }
-//                                                                                    }
-//                                                                                    if (exit) break;
-//                                                                                }
-                                        else if (l_st[tmpStar1] * l_st[threeCandidates[c][0]]
-                                                 + m_st[tmpStar1] * m_st[threeCandidates[c][0]]
-                                                 + n_st[tmpStar1] * n_st[threeCandidates[c][0]] >= 0.98480775)
+                                        else if (l_st[tmpStar1.starNum] * l_st[threeCandidates[c][0].starNum]
+                                                 + m_st[tmpStar1.starNum] * m_st[threeCandidates[c][0].starNum]
+                                                 + n_st[tmpStar1.starNum] * n_st[threeCandidates[c][0].starNum] >= CosP)
                                         {
                                             threeCandidates[c][threeCandidatesCount[c]++] = tmpStar1;
                                             threeCandidates[c][threeCandidatesCount[c]++] = tmpStar2;
                                             threeCandidates[c][threeCandidatesCount[c]++] = tmpStar3;
-                                            if (threeCandidatesCount[c] >= maxGroupSize - 3)
+                                            if (threeCandidatesCount[c] > maxGroupSize - 3)
                                             {
-                                                qsort(threeCandidates[c], threeCandidatesCount[c], sizeof(short), compareShort);
+                                                qsort(threeCandidates[c], threeCandidatesCount[c], sizeof(StarObject), compareStarObject);
                                                 threeCandidatesCount[c] = uniques(threeCandidates[c], threeCandidatesCount[c]);
+                                                newPereb(threeCandidates[c], threeCandidatesCount[c], l_st, m_st, n_st);
+                                                if (NumDet >= 4)
+                                                {
+                                                    time2 = rdtsc();
+                                                    times.append(time2 - time1);
+                                                    //qDebug() /*<< times*/ << NumDet << timer.nsecsElapsed();
+                                                    goto next;
+                                                }
                                             }
+
+
                                             break;
                                         }
                                     }
@@ -868,48 +935,185 @@ void MainWindow::on_fastThreePushButton_clicked()
                 }
             }
         }
-        time2 = rdtsc();
-        times.append(time2 - time1);
+        // time2 = rdtsc();
+        // times.append(time2 - time1);
         //qDebug() << threeCandidates;
-        time1 = rdtsc();
+        // time1 = rdtsc();
+        //qDebug() << groupCount;
+
+
         for (int i = 0; i < groupCount; i++)
         {
             if (threeCandidatesCount[i] == 0)
             {
                 break;
             }
-            qsort(threeCandidates[i], threeCandidatesCount[i], sizeof(short), compareShort);
+            qsort(threeCandidates[i], threeCandidatesCount[i], sizeof(StarObject), compareStarObject);
             threeCandidatesCount[i] = uniques(threeCandidates[i], threeCandidatesCount[i]);
-            if (threeCandidatesCount[i] >= MinDet)  //HO/TO MinDet=4
+            if (threeCandidatesCount[i] >= MinDet)
             {
-                Mnst = threeCandidatesCount[i] > mPM ? mPM : threeCandidatesCount[i];
-                for (int i1 = 0; i1 < Mnst - 1; i1++)
-                {
-                    for (int j1 = i1 + 1; j1 < Mnst; j1++)
-                    {
-                        PM[i1][j1] = PM[j1][i1] = l_st[threeCandidates[i][i1]] * l_st[threeCandidates[i][j1]]
-                                + m_st[threeCandidates[i][i1]] * m_st[threeCandidates[i][j1]]
-                                + n_st[threeCandidates[i][i1]] * n_st[threeCandidates[i][j1]];
-                    }
-                }
+                //                Mnst = threeCandidatesCount[i] > mPM ? mPM : threeCandidatesCount[i];
+                //                for (int i1 = 0; i1 < Mnst - 1; i1++)
+                //                {
+                //                    for (int j1 = i1 + 1; j1 < Mnst; j1++)
+                //                    {
+                //                        PM[i1][j1] = PM[j1][i1] = l_st[threeCandidates[i][i1].starNum] * l_st[threeCandidates[i][j1].starNum]
+                //                                + m_st[threeCandidates[i][i1].starNum] * m_st[threeCandidates[i][j1].starNum]
+                //                                + n_st[threeCandidates[i][i1].starNum] * n_st[threeCandidates[i][j1].starNum];
+                //                    }
+                //                }
                 NumDet = 0;
-                Pereb();
+                //Pereb();
+                newPereb(threeCandidates[i], threeCandidatesCount[i], l_st, m_st, n_st);
                 if (NumDet >= MinDet)
                 {
-                   // NumDet = i;
+                    count += NumDet;
                     break;
                 }
+                NumDet = 0;
             }
         }
         time2 = rdtsc();
         times.append(time2 - time1);
-        qDebug() << times << NumDet << timer.nsecsElapsed();
-    }
-    qDebug() << *max_element(times.begin(), times.end()) << "max";
+                next:
+        qDebug() /*<< times*/ << NumDet << timer.nsecsElapsed();
 
+    }
+
+
+    qDebug() << "FFFF" << count;
 }
 
 
+void MainWindow::IdentObjects(unsigned short graf[MaxDef][MaxDef], unsigned short Nf, unsigned short* im_save, unsigned short* Nmax)
+{
+    int i, j, N, min, i_del, num_del, k, buf, fl;
+    float eps_del, eps_cur;    //16/11/2016//
+
+    for (i=0;i<Nf;i++)
+    {
+        im[i]=i;
+    }
+
+    *Nmax=0;
+    num_del=0;
+    N=Nf;
+
+    while (*Nmax<N)
+    {
+        num_del=0;
+        while(N>1) //??? MinDet - ?
+        {
+            //iteration
+            min=1000;
+            for (i=0;i<N;i++)
+            {
+                sum_row[im[i]]=0;
+                for (j=0;j<N;j++)
+                    sum_row[im[i]]+=graf[im[i]][im[j]];
+                if (sum_row[im[i]]<=min)
+                {
+                    min =sum_row[im[i]];
+                    i_del=im[i];
+                }
+            }
+            if (N==min) break;
+            ///////////////16/11/2016//////////////////////////////
+            for (i=0;i<N;i++)
+            {
+                if ((sum_row[im[i]]==min)&&(im[i]!=i_del))
+                {
+                    eps_del=0; eps_cur=0;
+                    for (k=0; k<N; k++)
+                    {
+                        eps_del+=MatDif[i_del][im[k]];
+                        eps_cur+=MatDif[im[i]][im[k]];
+                    }
+                    if (eps_cur>eps_del)
+                    {
+                        min =sum_row[im[i]];
+                        i_del=im[i];
+                    }
+                }
+            }
+            ///////////////////////////////////////////////////////
+
+
+            for(i=0;i<N;i++)
+                if (im[i]>i_del)
+                    im[i-1]=im[i];
+
+            im_del[num_del]=i_del;
+            num_del++;
+            N--;
+        }  //end while (N>1)
+
+        if (N>*Nmax)
+        {
+            for(i=0;i<N;i++)
+                im_save[i]=im[i];
+            *Nmax=N;
+        }
+
+        if (num_del>*Nmax)  //16/11/2016//
+        {
+            fl=1;
+            while(fl)
+            {
+                fl=0;
+                k=0;
+                while (k<num_del-1)
+                {
+                    if (im_del[k+1]<im_del[k])
+                    {
+                        buf=im_del[k];
+                        im_del[k]=im_del[k+1];
+                        im_del[k+1]=buf; fl=1;
+                    }
+                    k++;
+                }
+            }
+
+            for (i=0;i<num_del;i++)
+                im[i]=im_del[i];
+        }
+        N=num_del;
+    }  //end while (Nmax<N)
+}
+
+
+void MainWindow::newPereb(StarObject* threeCandidates, int count, QVector <double>& l_st, QVector <double>& m_st, QVector <double>& n_st)
+{
+    for (int i = 0; i < count; i++)
+    {
+        for (int j = 0; j < count; j++)
+        {
+            MatCmp[i][j] = 1;
+        }
+    }
+    float Lf, Mf, Nf, Ls, Ms, Ns;
+    for (int i = 0; i < count - 1; i++)
+    {
+        Lf = l_st[threeCandidates[i].starNum];
+        Mf = m_st[threeCandidates[i].starNum];
+        Nf = n_st[threeCandidates[i].starNum];
+
+        for (int j = i + 1; j < count; j++)
+        {
+            Ls = l_st[threeCandidates[j].starNum];
+            Ms = m_st[threeCandidates[j].starNum];
+            Ns = n_st[threeCandidates[j].starNum];
+            if((MatDif[i][j] = fabs((Ncos[threeCandidates[i].objNum][threeCandidates[j].objNum]) - (Lf * Ls + Mf * Ms + Nf * Ns)))
+                    > Eps[threeCandidates[i].objNum][threeCandidates[j].objNum])
+            {
+                MatCmp[i][j] = 0;
+                MatCmp[j][i] = 0;
+            }
+            MatDif[j][i] = MatDif[i][j];
+        }
+    }
+    IdentObjects(MatCmp, count, NumIdent, &NumDet);
+}
 
 
 
